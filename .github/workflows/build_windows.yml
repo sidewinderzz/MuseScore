@@ -6,7 +6,7 @@ on:
     inputs:
       platforms:
         description: 'Platforms to build:'
-        default: 'windows_x64 windows_portable'
+        default: 'windows_portable' # Fork: upstream builds both by default
         required: true
       build_mode:
         description: 'Build mode: devel, nightly, testing, stable'
@@ -189,18 +189,25 @@ jobs:
         echo "DO_PUBLISH=$DO_PUBLISH" | tee -a $GITHUB_ENV
         echo "UPLOAD_ARTIFACT_NAME=$UPLOAD_ARTIFACT_NAME" | tee -a $GITHUB_ENV
 
-    # - parallel:
-    #   - name: Restore ccache files
-    #     id: restore-ccache
-    #     uses: actions/cache/restore@v6
-    #     with:
-    #       path: ${{ github.workspace }}/.ccache
-    #       key: ${{runner.os}}-${{runner.arch}}-ccache-
-    #       restore-keys: ${{runner.os}}-${{runner.arch}}-ccache-
-    #   - name: Setup ccache
-    #     run: |
-    #       choco install -y ccache
-    #       bash ./muse/buildscripts/ci/tools/setup_ccache_config.sh
+    # Fork: ccache is on for Windows (upstream has it commented out), with a separate cache per job
+    # because the portable build bakes different settings into the generated config header.
+    - parallel:
+      - name: Restore ccache files
+        id: restore-ccache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ${{runner.os}}-${{runner.arch}}-x64-ccache-
+          restore-keys: ${{runner.os}}-${{runner.arch}}-x64-ccache-
+      - name: Install ccache
+        run: |
+          choco install -y ccache
+    - name: Setup ccache
+      shell: bash
+      run: |
+        bash ./muse/buildscripts/ci/tools/setup_ccache_config.sh
+        # Objects carry embedded debug info (/Z7), so the upstream 1G limit is too small for a full build
+        echo "CCACHE_MAXSIZE=5G" | tee -a $GITHUB_ENV
 
     - parallel:
       - name: Install Qt
@@ -242,11 +249,18 @@ jobs:
       shell: cmd
       env:
         DOCKWIDGETS_V2: ${{ inputs.dockwidgets_v2 == 'ON' && 'ON' || 'OFF' }}
+        # Fork: keep the compiled-in build number and revision fixed so ccache can reuse objects
+        # between commits. Package names and the version in build.artifacts still use the real ones.
+        MUSESCORE_PINNED_BUILD_NUMBER: '1'
+        MUSESCORE_PINNED_REVISION: '0000000'
+        # Fork: MSVC precompiled headers are not reliably cacheable by ccache
+        MUSESCORE_COMPILE_USE_PCH: 'OFF'
       run: |
         buildscripts\ci\windows\build.bat -n %BUILD_NUMBER% --crash_log_url "%SENTRY_URL%" --dockwidgets_v2 %DOCKWIDGETS_V2%
-    # - name: Show ccache stats
-    #   run: |
-    #     ccache -sv
+    - name: Show ccache stats
+      if: always()
+      run: |
+        ccache -sv
     - name: Upload debug files
       if: env.DO_UPLOAD_SYMBOLS == 'true'
       shell: bash
@@ -289,19 +303,19 @@ jobs:
         name: ${{ env.UPLOAD_ARTIFACT_NAME }}
         path: build.artifacts\
 
-    # - name: Prepare ccache files for saving
-    #   id: prepare-save-ccache
-    #   if: always()
-    #   shell: bash
-    #   run: |
-    #     ccache --recompress 10
-    #     echo "CCACHE_TIMESTAMP=$(date -u +"%F-%T")" | tee -a $GITHUB_OUTPUT
-    # - name: Save ccache files
-    #   if: always()
-    #   uses: actions/cache/save@v6
-    #   with:
-    #     key: ${{ steps.restore-ccache.outputs.cache-primary-key }}${{ steps.prepare-save-ccache.outputs.CCACHE_TIMESTAMP }}
-    #     path: ${{ github.workspace }}/.ccache
+    - name: Prepare ccache files for saving
+      id: prepare-save-ccache
+      if: always()
+      shell: bash
+      run: |
+        ccache --recompress 10
+        echo "CCACHE_TIMESTAMP=$(date -u +"%F-%T")" | tee -a $GITHUB_OUTPUT
+    - name: Save ccache files
+      if: always() && steps.restore-ccache.outputs.cache-primary-key != ''
+      uses: actions/cache/save@v6
+      with:
+        key: ${{ steps.restore-ccache.outputs.cache-primary-key }}${{ steps.prepare-save-ccache.outputs.CCACHE_TIMESTAMP }}
+        path: ${{ github.workspace }}/.ccache
 
 
   windows_portable:
@@ -382,18 +396,25 @@ jobs:
         echo "DO_PUBLISH=$DO_PUBLISH" | tee -a $GITHUB_ENV
         echo "UPLOAD_ARTIFACT_NAME=$UPLOAD_ARTIFACT_NAME" | tee -a $GITHUB_ENV
 
-    # - parallel:
-    #   - name: Restore ccache files
-    #     id: restore-ccache
-    #     uses: actions/cache/restore@v6
-    #     with:
-    #       path: ${{ github.workspace }}/.ccache
-    #       key: ${{runner.os}}-${{runner.arch}}-ccache-
-    #       restore-keys: ${{runner.os}}-${{runner.arch}}-ccache-
-    #   - name: Setup ccache
-    #     run: |
-    #       choco install -y ccache
-    #       bash ./muse/buildscripts/ci/tools/setup_ccache_config.sh
+    # Fork: ccache is on for Windows (upstream has it commented out), with a separate cache per job
+    # because the portable build bakes different settings into the generated config header.
+    - parallel:
+      - name: Restore ccache files
+        id: restore-ccache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ${{runner.os}}-${{runner.arch}}-portable-ccache-
+          restore-keys: ${{runner.os}}-${{runner.arch}}-portable-ccache-
+      - name: Install ccache
+        run: |
+          choco install -y ccache
+    - name: Setup ccache
+      shell: bash
+      run: |
+        bash ./muse/buildscripts/ci/tools/setup_ccache_config.sh
+        # Objects carry embedded debug info (/Z7), so the upstream 1G limit is too small for a full build
+        echo "CCACHE_MAXSIZE=5G" | tee -a $GITHUB_ENV
 
     - parallel:
       - name: Install Qt
@@ -437,11 +458,18 @@ jobs:
       shell: cmd
       env:
         DOCKWIDGETS_V2: ${{ inputs.dockwidgets_v2 == 'ON' && 'ON' || 'OFF' }}
+        # Fork: keep the compiled-in build number and revision fixed so ccache can reuse objects
+        # between commits. Package names and the version in build.artifacts still use the real ones.
+        MUSESCORE_PINNED_BUILD_NUMBER: '1'
+        MUSESCORE_PINNED_REVISION: '0000000'
+        # Fork: MSVC precompiled headers are not reliably cacheable by ccache
+        MUSESCORE_COMPILE_USE_PCH: 'OFF'
       run: |
         buildscripts\ci\windows\build.bat --portable ON -n %BUILD_NUMBER% --dockwidgets_v2 %DOCKWIDGETS_V2%
-    # - name: Show ccache stats
-    #   run: |
-    #     ccache -sv
+    - name: Show ccache stats
+      if: always()
+      run: |
+        ccache -sv
     - name: Package
       shell: cmd
       env:
@@ -466,19 +494,19 @@ jobs:
         name: ${{ env.UPLOAD_ARTIFACT_NAME }}
         path: build.artifacts\
 
-    # - name: Prepare ccache files for saving
-    #   id: prepare-save-ccache
-    #   if: always()
-    #   shell: bash
-    #   run: |
-    #     ccache --recompress 10
-    #     echo "CCACHE_TIMESTAMP=$(date -u +"%F-%T")" | tee -a $GITHUB_OUTPUT
-    # - name: Save ccache files
-    #   if: always()
-    #   uses: actions/cache/save@v6
-    #   with:
-    #     key: ${{ steps.restore-ccache.outputs.cache-primary-key }}${{ steps.prepare-save-ccache.outputs.CCACHE_TIMESTAMP }}
-    #     path: ${{ github.workspace }}/.ccache
+    - name: Prepare ccache files for saving
+      id: prepare-save-ccache
+      if: always()
+      shell: bash
+      run: |
+        ccache --recompress 10
+        echo "CCACHE_TIMESTAMP=$(date -u +"%F-%T")" | tee -a $GITHUB_OUTPUT
+    - name: Save ccache files
+      if: always() && steps.restore-ccache.outputs.cache-primary-key != ''
+      uses: actions/cache/save@v6
+      with:
+        key: ${{ steps.restore-ccache.outputs.cache-primary-key }}${{ steps.prepare-save-ccache.outputs.CCACHE_TIMESTAMP }}
+        path: ${{ github.workspace }}/.ccache
 
   # windows_sign_test:
   #   if: github.event_name != 'workflow_dispatch' || contains(inputs.platforms, 'sign_test')
