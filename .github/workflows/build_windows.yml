@@ -253,8 +253,6 @@ jobs:
         # between commits. Package names and the version in build.artifacts still use the real ones.
         MUSESCORE_PINNED_BUILD_NUMBER: '1'
         MUSESCORE_PINNED_REVISION: '0000000'
-        # Fork: MSVC precompiled headers are not reliably cacheable by ccache
-        MUSESCORE_COMPILE_USE_PCH: 'OFF'
       run: |
         buildscripts\ci\windows\build.bat -n %BUILD_NUMBER% --crash_log_url "%SENTRY_URL%" --dockwidgets_v2 %DOCKWIDGETS_V2%
     - name: Show ccache stats
@@ -462,8 +460,6 @@ jobs:
         # between commits. Package names and the version in build.artifacts still use the real ones.
         MUSESCORE_PINNED_BUILD_NUMBER: '1'
         MUSESCORE_PINNED_REVISION: '0000000'
-        # Fork: MSVC precompiled headers are not reliably cacheable by ccache
-        MUSESCORE_COMPILE_USE_PCH: 'OFF'
       run: |
         buildscripts\ci\windows\build.bat --portable ON -n %BUILD_NUMBER% --dockwidgets_v2 %DOCKWIDGETS_V2%
     - name: Show ccache stats
