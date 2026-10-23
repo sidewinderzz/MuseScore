@@ -586,7 +586,22 @@ bool NotationInteraction::doShowShadowNote(ShadowNote& shadowNote, ShadowNotePar
         if (mu::engraving::NoteHeadGroup::HEAD_CUSTOM == noteheadGroup) {
             symNotehead = instr->drumset()->noteHeads(drumNotePitch, noteHead);
         } else {
-            symNotehead = Note::noteHead(0, noteheadGroup, noteHead);
+            // use the staff's notehead scheme (e.g. shape notes), read where the note will be placed (see NoteInput::putNote)
+            const Fraction noteTick = position.segment->tick();
+            const StaffType* staffType = staff->staffType(noteTick);
+            const NoteHeadScheme scheme = staffType->noteHeadScheme();
+            if (instr->useDrumset() || staffType->isTabStaff()
+                || scheme == NoteHeadScheme::HEAD_NORMAL || scheme == NoteHeadScheme::HEAD_AUTO) {
+                symNotehead = Note::noteHead(0, noteheadGroup, noteHead);
+            } else {
+                // the shape depends only on the letter name, so the accidental can be ignored
+                const double lineOffset = staffType->stepOffset() + 2 * staffType->yoffset().val() / staffType->lineDistance().val();
+                const int noteLine = static_cast<int>(line - lineOffset);
+                const int step = ((absStep(noteLine, staff->clef(noteTick)) % 7) + 7) % 7;
+                const int tpc = step2tpc(step, AccidentalVal::NATURAL);
+                const int direction = shadowNote.computeUp() ? 1 : 0;
+                symNotehead = Note::noteHead(direction, noteheadGroup, noteHead, tpc, staff->key(noteTick), scheme);
+            }
         }
 
         shadowNote.setState(symNotehead, params.duration, false, params.position.beyondScore, params.accidentalType,
